@@ -102,23 +102,31 @@ module Refile
     # @param [Hash] options
     # @option options [Object] object       Set by the form builder
     # @return [ActiveSupport::SafeBuffer]   The generated hidden form field
-    def attachment_cache_field(object_name, method, object:, **options)
+    def attachment_field(object_name, method, object:, **options)
       options[:data] ||= {}
-      options[:data][:reference] ||= SecureRandom.hex
 
-      attacher_value = object.send("#{method}_data")
+      definition = object.send(:"#{method}_attachment_definition")
+      options[:accept] = definition.accept
 
-      hidden_options = {
+      if options[:direct]
+        url = Refile.attachment_upload_url(object, method, host: options[:host], prefix: options[:prefix])
+        options[:data].merge!(direct: true, as: "file", url: url)
+      end
+
+      if options[:presigned] and definition.cache.respond_to?(:presign)
+        url = Refile.attachment_presign_url(object, method, host: options[:host], prefix: options[:prefix])
+        options[:data].merge!(direct: true, presigned: true, url: url)
+      end
+
+      options[:data][:reference] = SecureRandom.hex
+
+      hidden_field(object_name, method,
         multiple: options[:multiple],
-        value: attacher_value.try(:to_json),
+        value: object.send("#{method}_data").try(:to_json),
         object: object,
-        disabled: attacher_value.blank?,
         id: nil,
         data: { reference: options[:data][:reference] }
-      }
-      hidden_options.merge!(index: options[:index]) if options.key?(:index)
-
-      hidden_field(object_name, method, hidden_options)
+      ) + file_field(object_name, method, options)
     end
   end
 end
